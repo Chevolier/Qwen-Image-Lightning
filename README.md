@@ -273,7 +273,12 @@ CUDA_VISIBLE_DEVICES=0 nohup python generate_with_diffusers.py \
 
 python image_edit_vllm_omni.py \
    
-
+python image_edit.py \
+        --image examples/qwen_image_edit/qwen_edit1.webp \
+        --prompt "Change the person to a standing position, bending over to hold the dog's front paws." \
+        --output output_image_edit.png \
+        --num_inference_steps 50 \
+        --cfg_scale 4.0
 
 ```
 
