@@ -160,6 +160,8 @@ Download models using huggingface-cli:
 ``` sh
 pip install "huggingface_hub[cli]"
 huggingface-cli download lightx2v/Qwen-Image-Lightning --local-dir ./Qwen-Image-Lightning
+
+hf download Qwen/Qwen-Image-Edit-2509 --local-dir /home/ec2-user/SageMaker/efs/Models/Qwen-Image-Edit-2509
 ```
 
 ### Run 8-step Model
@@ -261,13 +263,18 @@ python generate_with_diffusers.py \
 ### Run Base Edit-2509 Model
 
 ``` sh
-# 40 steps, cfg 4.0
-python generate_with_diffusers.py \
+# 50 steps, cfg 4.0
+CUDA_VISIBLE_DEVICES=0 nohup python generate_with_diffusers.py \
 --prompt_list_file examples/edit_plus_prompt_list.txt \
 --image_path_list_file examples/edit_plus_image_path_list.txt \
---model_name Qwen/Qwen-Image-Edit-2509 \
---out_dir test_base_40_step_edit_2509_results \
---base_seed 42 --steps 40 --cfg 4.0
+--model_name /home/ec2-user/SageMaker/efs/Models/Qwen-Image-Edit-2509 \
+--out_dir test_base_50_step_edit_2509_results \
+--base_seed 42 --steps 50 --cfg 4.0 > logs/edit_2509_50steps.out 2>&1 &
+
+python image_edit_vllm_omni.py \
+   
+
+
 ```
 
 ## 🎨 ComfyUI Workflow

@@ -11,6 +11,9 @@ from diffusers import (
 )
 from diffusers.models import QwenImageTransformer2DModel
 import torch
+import time
+import pandas as pd
+from tqdm import tqdm
 
 
 def main(
@@ -78,19 +81,29 @@ def main(
         "zh": ", 超清，4K，电影级构图.",  # for chinese prompt
     }
 
-    # Generate with different aspect ratios
-    if image_path_list_file is None:
-        aspect_ratios = {
-            "1:1": (1328, 1328),
+    # # Generate with different aspect ratios
+    # if image_path_list_file is None:
+    #     aspect_ratios = {
+    #         # "1:1": (1328, 1328),
+    #         "16:9": (1664, 928),
+    #         # "9:16": (928, 1664),
+    #         # "4:3": (1472, 1104),
+    #         # "3:4": (1104, 1472),
+    #         # "3:2": (1584, 1056),
+    #         # "2:3": (1056, 1584),
+    #     }
+    # else:
+    #     aspect_ratios = {"not_used": ("auto", "auto")}
+    
+    aspect_ratios = {
+            # "1:1": (1328, 1328),
             "16:9": (1664, 928),
-            "9:16": (928, 1664),
-            "4:3": (1472, 1104),
-            "3:4": (1104, 1472),
-            "3:2": (1584, 1056),
-            "2:3": (1056, 1584),
+            # "9:16": (928, 1664),
+            # "4:3": (1472, 1104),
+            # "3:4": (1104, 1472),
+            # "3:2": (1584, 1056),
+            # "2:3": (1056, 1584),
         }
-    else:
-        aspect_ratios = {"not_used": ("auto", "auto")}
 
     with open(prompt_list_file, "r") as f:
         prompt_list = f.read().splitlines()
@@ -102,9 +115,12 @@ def main(
         image_path_list = None
 
     os.makedirs(out_dir, exist_ok=True)
-    
+
+    # Metrics collection
+    metrics = []
+
     for _, (width, height) in aspect_ratios.items():
-        for i, prompt in enumerate(prompt_list):
+        for i, prompt in tqdm(enumerate(prompt_list)):
             if image_path_list is None:
                 prompt = prompt + positive_magic["en"]
             input_args = {
@@ -124,11 +140,50 @@ def main(
                 else:
                     input_args["image"] = Image.open(image_path_list[i]).convert("RGB")
 
+            # Reset GPU memory stats and measure
+            if device == "cuda":
+                torch.cuda.reset_peak_memory_stats()
+                torch.cuda.synchronize()
+
+            start_time = time.time()
             image = pipe(**input_args).images[0]
+
+            if device == "cuda":
+                torch.cuda.synchronize()
+            end_time = time.time()
+
+            inference_time = end_time - start_time
+
+            if device == "cuda":
+                peak_memory_gb = torch.cuda.max_memory_allocated() / (1024 ** 3)
+            else:
+                peak_memory_gb = 0.0
+
+            metrics.append({
+                "request_id": i,
+                "width": width,
+                "height": height,
+                "inference_time_sec": inference_time,
+                "peak_gpu_memory_gb": peak_memory_gb,
+            })
+
+            print(f"Request {i}: inference_time={inference_time:.2f}s, peak_gpu_memory={peak_memory_gb:.2f}GB")
 
             image.save(
                 f"{out_dir}/{i:02d}_{width}x{height}_{num_inference_steps}steps_cfg{true_cfg_scale}_example.png"
             )
+
+    # Generate statistics using pandas
+    df_metrics = pd.DataFrame(metrics)
+    df_metrics.to_csv(f"{out_dir}/metrics_raw_{width}x{height}_{num_inference_steps}steps_cfg{true_cfg_scale}.csv", index=False)
+
+    # Generate statistics (min, max, mean, 50%)
+    stats = df_metrics[["inference_time_sec", "peak_gpu_memory_gb"]].describe(percentiles=[0.5, 0.75, 0.9, 0.95, 0.99])
+    stats = stats.loc[["min", "mean", "50%", "75%", "90%", "95%", "99%", "max"]]
+    stats.to_csv(f"{out_dir}/metrics_stats_{width}x{height}_{num_inference_steps}steps_cfg{true_cfg_scale}.csv")
+
+    print("\n=== Metrics Statistics ===")
+    print(stats)
 
 
 if __name__ == "__main__":
